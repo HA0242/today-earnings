@@ -7,6 +7,9 @@ build/earnings-rw.dmg
 assets/AppIcon.iconset/
 assets/AppIcon.icns
 
+# 未被 build/build_app.sh 使用的原始素材（真正的图标源文件是 icon_1024.png）
+assets/icon_src.jpg
+
 # 图标设计过程中的中间预览图，不是最终会用到的资源
 Claude outputs/
 
