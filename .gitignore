@@ -1,0 +1,14 @@
+# 构建产物（由 build/build_app.sh 从源码/原始图标重新生成，不需要进版本库）
+*.app/
+*.dmg
+build/.work/
+build/dmg-mount/
+build/earnings-rw.dmg
+assets/AppIcon.iconset/
+assets/AppIcon.icns
+
+# 图标设计过程中的中间预览图，不是最终会用到的资源
+Claude outputs/
+
+# macOS
+.DS_Store
