@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -92,10 +93,12 @@ fun LabeledRow(label: String, content: @Composable RowScope.() -> Unit) {
 @Composable
 fun Badge(text: String, color: Color, filled: Boolean, alpha: Float = 1f) {
     Surface(
+        modifier = Modifier.height(15.dp),
         shape = RoundedCornerShape(50),
         color = if (filled) color.copy(alpha = alpha) else Color.Transparent,
-        border = if (filled) null else BorderStroke(0.8.dp, color.copy(alpha = 0.55f * alpha)),
+        border = BorderStroke(0.8.dp, if (filled) Color.Transparent else color.copy(alpha = 0.55f * alpha)),
     ) {
+      Box(contentAlignment = Alignment.Center) {
         Text(
             text = text,
             fontSize = 9.sp,
@@ -104,7 +107,8 @@ fun Badge(text: String, color: Color, filled: Boolean, alpha: Float = 1f) {
             softWrap = false,
             fontWeight = FontWeight.SemiBold,
             color = if (filled) Color.White else color.copy(alpha = 0.75f * alpha),
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 5.dp),
         )
+      }
     }
 }
