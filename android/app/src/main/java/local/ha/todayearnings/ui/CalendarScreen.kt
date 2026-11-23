@@ -176,7 +176,7 @@ private fun MonthGrid(data: AppData, calc: EarningsCalc, ym: YearMonth, onDayCli
                 for (i in 0 until 7) {
                     val d = week.getOrNull(i)
                     if (d == null) {
-                        Box(Modifier.weight(1f).height(54.dp))
+                        Box(Modifier.weight(1f).height(62.dp))
                     } else {
                         DayCell(
                             calc = calc,
@@ -218,7 +218,7 @@ private fun DayCell(
     }
     Column(
         modifier = modifier
-            .height(54.dp)
+            .height(62.dp)
             .background(if (showBox) MaterialTheme.colorScheme.background.copy(alpha = 0.6f) else Color.Transparent, shape)
             .border(if (isToday) 1.5.dp else 1.dp, borderColor, shape)
             .clickable(onClick = onClick),
@@ -232,7 +232,7 @@ private fun DayCell(
             color = if (isWorkday) DS.accent.copy(alpha = dim) else mutedColor(),
             style = TabularNums,
         )
-        Row(Modifier.height(14.dp).padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.height(18.dp).padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
             if (isWorkday && leave == null) Badge("班", DS.accent, filled = true, alpha = dim)
             if (leave != null) Badge(if (leave.half) "半假" else "假", DS.negative, filled = !leave.deduct, alpha = dim)
             if (overtime != null) Badge("加", DS.positive, filled = overtime.paid, alpha = dim)

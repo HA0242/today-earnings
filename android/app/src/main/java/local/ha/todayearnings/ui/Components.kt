@@ -99,9 +99,12 @@ fun Badge(text: String, color: Color, filled: Boolean, alpha: Float = 1f) {
         Text(
             text = text,
             fontSize = 9.sp,
+            lineHeight = 11.sp,
+            maxLines = 1,
+            softWrap = false,
             fontWeight = FontWeight.SemiBold,
             color = if (filled) Color.White else color.copy(alpha = 0.75f * alpha),
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
         )
     }
 }
