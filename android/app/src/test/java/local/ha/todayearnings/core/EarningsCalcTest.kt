@@ -224,7 +224,7 @@ class EarningsCalcTest {
         assertEquals(YearMonth.of(2026, 12), Cycle.periodOf(LocalDate.of(2026, 11, 25), 25))
         assertEquals(YearMonth.of(2027, 1), Cycle.periodOf(LocalDate.of(2026, 12, 31), 25))
         assertEquals(nov, Cycle.periodOf(LocalDate.of(2026, 11, 30), 1)) // 自然月
-        assertEquals(30, Cycle.dates(nov, 25).size)
+        assertEquals(31, Cycle.dates(nov, 25).size)
     }
 
     @Test fun cycle_workdays_and_daily_income_span_two_months() {
