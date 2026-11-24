@@ -86,13 +86,19 @@ class EarningsCalc(
     val today: LocalDate,
     val nowSec: Double,
 ) {
-    private val todayMonth = YearMonth.from(today)
+    private val startDay = Cycle.normalize(settings.cycleStartDay)
+    private val todayMonth = Cycle.periodOf(today, startDay)
 
     // ── 工作日 ──
 
+    /** 自然月的工作日安排（按日期存储，与计费周期无关）。 */
     fun workdays(ym: YearMonth): Set<Int> = ledger.plans[ym.key()] ?: ym.defaultWorkdays()
     fun isWorkday(date: LocalDate): Boolean = workdays(YearMonth.from(date)).contains(date.dayOfMonth)
-    fun workdayCount(ym: YearMonth): Int = workdays(ym).size
+
+    // ── 计费周期（ym = 结束日所在月） ──
+    fun periodOf(date: LocalDate): YearMonth = Cycle.periodOf(date, startDay)
+    fun periodDates(ym: YearMonth): List<LocalDate> = Cycle.dates(ym, startDay)
+    fun workdayCount(ym: YearMonth): Int = periodDates(ym).count { isWorkday(it) }
 
     // ── 速率 ──
 
@@ -139,8 +145,7 @@ class EarningsCalc(
     fun dayBase(date: LocalDate): Double {
         if (date.isAfter(today) || beforeStart(date)) return 0.0
         if (!isWorkday(date)) return 0.0
-        val ym = YearMonth.from(date)
-        val daily = dailyIncome(ym)
+        val daily = dailyIncome(periodOf(date))
         val isToday = date == today
         val leave = ledger.records[date.key()]?.leave
         if (leave != null && leave.deduct) {
@@ -156,7 +161,7 @@ class EarningsCalc(
         if (beforeStart(date)) return 0.0
         val ot = ledger.records[date.key()]?.overtime ?: return 0.0
         if (!ot.paid) return 0.0
-        return hourlyIncome(YearMonth.from(date)) * ot.hours * ot.multiplier
+        return hourlyIncome(periodOf(date)) * ot.hours * ot.multiplier
     }
 
     fun dayEarned(date: LocalDate): Double = dayBase(date) + overtimeFee(date)
@@ -166,41 +171,45 @@ class EarningsCalc(
 
     // ── 月度 ──
 
-    /** 月已挣：自然月 1 日至今所有日子的基础收入 + 加班费。 */
-    fun monthEarnings(ym: YearMonth): Double =
-        (1..ym.lengthOfMonth()).sumOf { dayEarned(ym.atDay(it)) }
+    /** 周期已挣：周期起算日至今所有日子的基础收入 + 加班费。 */
+    fun monthEarnings(ym: YearMonth): Double = periodDates(ym).sumOf { dayEarned(it) }
 
-    fun monthRecords(ym: YearMonth): List<Pair<Int, DayRecord>> =
-        (1..ym.lengthOfMonth()).mapNotNull { d -> ledger.records[ym.atDay(d).key()]?.let { d to it } }
+    fun monthRecords(ym: YearMonth): List<Pair<LocalDate, DayRecord>> =
+        periodDates(ym).mapNotNull { d -> ledger.records[d.key()]?.let { d to it } }
 
-    /** 一条记录对当月收入的净影响：扣钱请假为负（仅工作日），加钱加班为正。 */
-    fun recordImpact(ym: YearMonth, day: Int): Double {
-        val date = ym.atDay(day)
+    /** 周期内已过的工作日数（统计到今天，历史周期统计到周期末）。 */
+    fun elapsedWorkdays(ym: YearMonth): Int =
+        periodDates(ym).count { !it.isAfter(today) && isWorkday(it) }
+
+    /** 一条记录对当期收入的净影响：扣钱请假为负（仅工作日），加钱加班为正。 */
+    fun recordImpact(date: LocalDate): Double {
         if (beforeStart(date)) return 0.0
         val rec = ledger.records[date.key()]
         var delta = 0.0
         val leave = rec?.leave
-        if (leave != null && leave.deduct && isWorkday(date)) delta -= dailyIncome(ym) * leave.factor
+        if (leave != null && leave.deduct && isWorkday(date)) delta -= dailyIncome(periodOf(date)) * leave.factor
         delta += overtimeFee(date)
         return delta
     }
 
+    fun recordImpact(ym: YearMonth, day: Int): Double = recordImpact(ym.atDay(day))
+
     fun monthSummary(ym: YearMonth): MonthSummary {
-        val wds = workdays(ym)
+        val dates = periodDates(ym)
         val daily = dailyIncome(ym)
-        val counted = wds.count { !beforeStart(ym.atDay(it)) }
+        val wdCount = dates.count { isWorkday(it) }
+        val counted = dates.count { isWorkday(it) && !beforeStart(it) }
         var expected = daily * counted
         var leaveDays = 0.0
         var leaveDeductDays = 0.0
         var leaveDeduction = 0.0
         var overtimeHours = 0.0
         var overtimeFee = 0.0
-        for (day in 1..ym.lengthOfMonth()) {
-            val date = ym.atDay(day)
+        for (date in dates) {
             if (beforeStart(date)) continue
             val rec = ledger.records[date.key()] ?: continue
             val leave = rec.leave
-            if (leave != null && wds.contains(day)) {
+            if (leave != null && isWorkday(date)) {
                 leaveDays += leave.factor
                 if (leave.deduct) {
                     leaveDeductDays += leave.factor
@@ -218,7 +227,7 @@ class EarningsCalc(
                 }
             }
         }
-        return MonthSummary(wds.size, expected, leaveDeduction, overtimeFee, leaveDays, leaveDeductDays, overtimeHours)
+        return MonthSummary(wdCount, expected, leaveDeduction, overtimeFee, leaveDays, leaveDeductDays, overtimeHours)
     }
 }
 

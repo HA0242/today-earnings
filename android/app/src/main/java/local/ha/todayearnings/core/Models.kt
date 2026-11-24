@@ -82,6 +82,8 @@ data class Settings(
     val monthlySalary: Double = 10000.0,
     val segments: List<WorkSegment> = defaultSegments(),
     val updateMode: UpdateMode = UpdateMode.EVERY_SECOND,
+    /** 每月计费起算日（1~28）。1 = 自然月；25 = 上月 25 日 ~ 本月 24 日算作“本月”。 */
+    val cycleStartDay: Int = 1,
 ) {
     companion object {
         fun defaultSegments(): List<WorkSegment> = listOf(
@@ -144,3 +146,41 @@ fun YearMonth.defaultWorkdays(): Set<Int> =
 fun YearMonth.leadingBlanks(): Int = atDay(1).dayOfWeek.value - 1
 
 fun YearMonth.title(): String = "${year}年${monthValue}月"
+
+
+// ───────────────────────── 计费周期 ─────────────────────────
+
+/**
+ * 计费周期，按“结束日所在月”命名：起算日 25 时，10 月 25 日 ~ 11 月 24 日 = “11 月”。
+ * 起算日为 1 时就是自然月。工作日安排仍按自然日期存储，所以改起算日不会丢数据。
+ */
+object Cycle {
+    fun normalize(startDay: Int): Int = startDay.coerceIn(1, 28)
+
+    fun start(ym: YearMonth, startDay: Int): LocalDate {
+        val d = normalize(startDay)
+        return if (d == 1) ym.atDay(1) else ym.minusMonths(1).atDay(d)
+    }
+
+    fun end(ym: YearMonth, startDay: Int): LocalDate = start(ym.plusMonths(1), startDay).minusDays(1)
+
+    /** 某一天属于哪个计费周期（用结束日所在月表示）。 */
+    fun periodOf(date: LocalDate, startDay: Int): YearMonth {
+        val d = normalize(startDay)
+        val ym = YearMonth.from(date)
+        return if (d > 1 && date.dayOfMonth >= d) ym.plusMonths(1) else ym
+    }
+
+    fun dates(ym: YearMonth, startDay: Int): List<LocalDate> {
+        val s = start(ym, startDay)
+        val n = java.time.temporal.ChronoUnit.DAYS.between(s, end(ym, startDay)).toInt() + 1
+        return List(n) { s.plusDays(it.toLong()) }
+    }
+
+    /** 例如 "10/25 – 11/24"；自然月返回 null。 */
+    fun rangeText(ym: YearMonth, startDay: Int): String? {
+        if (normalize(startDay) == 1) return null
+        val s = start(ym, startDay); val e = end(ym, startDay)
+        return "${s.monthValue}/${s.dayOfMonth} – ${e.monthValue}/${e.dayOfMonth}"
+    }
+}

@@ -32,6 +32,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import local.ha.todayearnings.core.Cycle
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,16 +61,18 @@ import java.time.YearMonth
 fun CalendarScreen(
     data: AppData,
     calc: EarningsCalc,
-    onToggleWorkday: (YearMonth, Int) -> Unit,
+    onToggleWorkday: (LocalDate) -> Unit,
+    onSwitchRole: (String) -> Unit,
     onSetLeave: (LocalDate, LeaveRecord?) -> Unit,
     onSetOvertime: (LocalDate, OvertimeRecord?) -> Unit,
 ) {
     val today = calc.today
-    val current = YearMonth.from(today)
+    val current = calc.periodOf(today)
+    val startDay = calc.settings.cycleStartDay
     val maxMonth = current.plusMonths(1) // 只开放到下个月，用来提前调整大小周
     var shownIndex by rememberSaveable { mutableStateOf(current.year * 12 + current.monthValue - 1) }
     val shown = YearMonth.of(shownIndex / 12, shownIndex % 12 + 1)
-    var editingDay by rememberSaveable { mutableStateOf<Int?>(null) }
+    var editingEpoch by rememberSaveable { mutableStateOf<Long?>(null) }
     val canGoNext = shown.isBefore(maxMonth)
 
     Column(
@@ -78,36 +82,42 @@ fun CalendarScreen(
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        RoleSwitcher(data, onSwitchRole)
         // 月份切换
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = { shownIndex -= 1; editingDay = null }) { Text("‹", fontSize = 26.sp) }
-            Text(shown.title(), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(120.dp), textAlign = TextAlign.Center)
-            TextButton(onClick = { shownIndex += 1; editingDay = null }, enabled = canGoNext) { Text("›", fontSize = 26.sp) }
+            TextButton(onClick = { shownIndex -= 1; editingEpoch = null }) { Text("‹", fontSize = 26.sp) }
+            Column(Modifier.width(150.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(shown.title(), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                Cycle.rangeText(shown, startDay)?.let { Text(it, fontSize = 11.sp, color = mutedColor()) }
+            }
+            TextButton(onClick = { shownIndex += 1; editingEpoch = null }, enabled = canGoNext) { Text("›", fontSize = 26.sp) }
         }
 
         SummaryCard(calc, shown)
-        MonthGrid(data, calc, shown, onDayClick = { editingDay = it })
+        MonthGrid(data, calc, shown, onDayClick = { editingEpoch = it.toEpochDay() })
         Legend()
     }
 
-    val day = editingDay
-    if (day != null && day in 1..shown.lengthOfMonth()) {
+    val editing = editingEpoch?.let { LocalDate.ofEpochDay(it) }
+    if (editing != null && calc.periodDates(shown).contains(editing)) {
         ModalBottomSheet(
-            onDismissRequest = { editingDay = null },
+            onDismissRequest = { editingEpoch = null },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
-            DayEditor(
-                calc = calc,
-                ym = shown,
-                day = day,
-                onToggleWorkday = { onToggleWorkday(shown, day) },
-                onSetLeave = { onSetLeave(shown.atDay(day), it) },
-                onSetOvertime = { onSetOvertime(shown.atDay(day), it) },
-            )
+            // 以角色 + 日期为 key，切换后不会残留上一个输入框的内容
+            key(data.activeRoleId, editing) {
+                DayEditor(
+                    calc = calc,
+                    date = editing,
+                    onToggleWorkday = { onToggleWorkday(editing) },
+                    onSetLeave = { onSetLeave(editing, it) },
+                    onSetOvertime = { onSetOvertime(editing, it) },
+                )
+            }
         }
     }
 }
@@ -121,7 +131,7 @@ private fun SummaryCard(calc: EarningsCalc, ym: YearMonth) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("本月已挣", fontSize = 12.sp, letterSpacing = 1.5.sp, color = mutedColor())
+            Text(if (calc.settings.cycleStartDay > 1) "本期已挣" else "本月已挣", fontSize = 12.sp, letterSpacing = 1.5.sp, color = mutedColor())
             Text(
                 "¥${Fmt.money(calc.monthEarnings(ym))}",
                 fontSize = 28.sp,
@@ -159,10 +169,11 @@ private fun SummaryItem(label: String, value: String, color: Color, modifier: Mo
 }
 
 @Composable
-private fun MonthGrid(data: AppData, calc: EarningsCalc, ym: YearMonth, onDayClick: (Int) -> Unit) {
+private fun MonthGrid(data: AppData, calc: EarningsCalc, ym: YearMonth, onDayClick: (LocalDate) -> Unit) {
     val today = calc.today
-    val blanks = ym.leadingBlanks()
-    val cells: List<Int?> = List(blanks) { null } + (1..ym.lengthOfMonth()).map { it }
+    val dates = calc.periodDates(ym)
+    val blanks = dates.first().dayOfWeek.value - 1
+    val cells: List<LocalDate?> = List(blanks) { null } + dates
     val rows = cells.chunked(7)
     Card(padding = 12.dp) {
         Row(Modifier.fillMaxWidth()) {
@@ -174,17 +185,18 @@ private fun MonthGrid(data: AppData, calc: EarningsCalc, ym: YearMonth, onDayCli
         rows.forEach { week ->
             Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 for (i in 0 until 7) {
-                    val d = week.getOrNull(i)
-                    if (d == null) {
+                    val date = week.getOrNull(i)
+                    if (date == null) {
                         Box(Modifier.weight(1f).height(62.dp))
                     } else {
                         DayCell(
                             calc = calc,
-                            record = data.activeRole.ledger.records[ym.atDay(d).key()],
-                            date = ym.atDay(d),
-                            isToday = ym.atDay(d) == today,
+                            record = data.activeRole.ledger.records[date.key()],
+                            date = date,
+                            isToday = date == today,
+                            showMonth = date.dayOfMonth == 1 || date == dates.first(),
                             modifier = Modifier.weight(1f),
-                            onClick = { onDayClick(d) },
+                            onClick = { onDayClick(date) },
                         )
                     }
                 }
@@ -199,6 +211,7 @@ private fun DayCell(
     record: DayRecord?,
     date: LocalDate,
     isToday: Boolean,
+    showMonth: Boolean,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
@@ -226,8 +239,8 @@ private fun DayCell(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            "${date.dayOfMonth}",
-            fontSize = 15.sp,
+            if (showMonth) "${date.monthValue}/${date.dayOfMonth}" else "${date.dayOfMonth}",
+            fontSize = if (showMonth) 12.sp else 15.sp,
             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium,
             color = if (isWorkday) DS.accent.copy(alpha = dim) else mutedColor(),
             style = TabularNums,
@@ -267,13 +280,12 @@ private fun Legend() {
 @Composable
 private fun DayEditor(
     calc: EarningsCalc,
-    ym: YearMonth,
-    day: Int,
+    date: LocalDate,
     onToggleWorkday: () -> Unit,
     onSetLeave: (LeaveRecord?) -> Unit,
     onSetOvertime: (OvertimeRecord?) -> Unit,
 ) {
-    val date = ym.atDay(day)
+    val ym = calc.periodOf(date)
     val isWorkday = calc.isWorkday(date)
     val record = calc.ledger.records[date.key()]
     val leave = record?.leave
@@ -287,7 +299,7 @@ private fun DayEditor(
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("${ym.monthValue}月${day}日 · ${Fmt.weekday(date)}", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Text("${date.monthValue}月${date.dayOfMonth}日 · ${Fmt.weekday(date)}", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         Text(
             if (isWorkday) "工作日 · 日薪 ¥${Fmt.money(calc.dailyIncome(ym))}" else "休息日 · 不计薪",
             fontSize = 13.sp,
@@ -297,7 +309,7 @@ private fun DayEditor(
         // 这天上班
         SwitchRow("这天上班", isWorkday) { onToggleWorkday() }
         Text(
-            "提示：修改工作日会改变当月的日薪（月薪 ÷ 工作日数），本月已过去的日子也会跟着变。",
+            "提示：修改工作日会改变当期的日薪（月薪 ÷ 工作日数），当期已过去的日子也会跟着变。",
             fontSize = 11.sp,
             color = mutedColor(),
         )
@@ -392,7 +404,7 @@ private fun ChipRow(options: List<String>, selected: Int, onSelect: (Int) -> Uni
 @Composable
 private fun NoteField(placeholder: String, value: String, onChange: (String) -> Unit) {
     // 本地保存输入内容，避免每次写盘后光标跳动
-    var text by remember { mutableStateOf(value) }
+    var text by remember(placeholder) { mutableStateOf(value) }
     OutlinedTextField(
         value = text,
         onValueChange = { text = it; onChange(it) },

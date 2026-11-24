@@ -213,4 +213,47 @@ class EarningsCalcTest {
         assertEquals(a.id, n.activeRoleId)
         assertEquals(1, AppData(emptyList(), "x").normalized().roles.size)
     }
+
+    // ── 计费周期（起算日 25：上月 25 日 ~ 本月 24 日算作本月，按结束日所在月命名） ──
+    private val cyc25 = Settings(cycleStartDay = 25)
+
+    @Test fun cycle_period_boundaries() {
+        assertEquals(LocalDate.of(2026, 10, 25), Cycle.start(nov, 25))
+        assertEquals(LocalDate.of(2026, 11, 24), Cycle.end(nov, 25))
+        assertEquals(YearMonth.of(2026, 11), Cycle.periodOf(LocalDate.of(2026, 11, 24), 25))
+        assertEquals(YearMonth.of(2026, 12), Cycle.periodOf(LocalDate.of(2026, 11, 25), 25))
+        assertEquals(YearMonth.of(2027, 1), Cycle.periodOf(LocalDate.of(2026, 12, 31), 25))
+        assertEquals(nov, Cycle.periodOf(LocalDate.of(2026, 11, 30), 1)) // 自然月
+        assertEquals(30, Cycle.dates(nov, 25).size)
+    }
+
+    @Test fun cycle_workdays_and_daily_income_span_two_months() {
+        // 10/26~11/24 默认周一至周五共 22 天
+        val c = EarningsCalc(cyc25, Ledger(), day, 0.0)
+        assertEquals(22, c.workdayCount(nov))
+        assertEquals(10000.0 / 22, c.dailyIncome(nov), 1e-6)
+    }
+
+    @Test fun cycle_month_earnings_counts_from_previous_month() {
+        // 11/10 零点：10/26~11/9 共 11 个工作日已过，今天还没上班
+        val c = EarningsCalc(cyc25, Ledger(), day, 0.0)
+        assertEquals(11 * 10000.0 / 22, c.monthEarnings(nov), 1e-6)
+    }
+
+    @Test fun cycle_leave_in_previous_month_belongs_to_this_period() {
+        val rec = DayRecord(leave = LeaveRecord(deduct = true))
+        val ledger = Ledger(records = mapOf("2026-10-28" to rec))
+        val c = EarningsCalc(cyc25, ledger, day, 0.0)
+        assertEquals(-10000.0 / 22, c.recordImpact(LocalDate.of(2026, 10, 28)), 1e-6)
+        assertEquals(1, c.monthRecords(nov).size)
+        assertEquals(1.0, c.monthSummary(nov).leaveDays, 1e-9)
+    }
+
+    @Test fun cycle_workday_plan_is_by_calendar_date() {
+        // 改起算日不影响自然日期上的工作日安排
+        val ledger = Ledger(plans = mapOf("2026-11" to setOf(2, 3)))
+        val c = EarningsCalc(cyc25, ledger, day, 0.0)
+        assertTrue(c.isWorkday(LocalDate.of(2026, 11, 2)))
+        assertFalse(c.isWorkday(LocalDate.of(2026, 11, 4)))
+    }
 }

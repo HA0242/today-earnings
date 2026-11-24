@@ -130,10 +130,11 @@ private fun AppRoot(vm: AppViewModel) {
                     data = data,
                     calc = calc,
                     onToggleWorkday = vm::toggleWorkday,
+                    onSwitchRole = vm::switchRole,
                     onSetLeave = vm::setLeave,
                     onSetOvertime = vm::setOvertime,
                 )
-                2 -> StatsScreen(calc)
+                2 -> StatsScreen(data, calc, onSwitchRole = vm::switchRole)
                 else -> SettingsScreen(vm, data, calc, onOpenCalendar = { tab = 1 })
             }
         }

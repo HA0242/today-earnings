@@ -32,24 +32,26 @@ import local.ha.todayearnings.core.DayRecord
 import local.ha.todayearnings.core.EarningsCalc
 import local.ha.todayearnings.core.Fmt
 import local.ha.todayearnings.core.title
+import local.ha.todayearnings.core.AppData
+import local.ha.todayearnings.core.Cycle
+import java.time.LocalDate
 import java.time.YearMonth
 
 private fun daysText(d: Double): String =
     if (d % 1.0 == 0.0) d.toInt().toString() else String.format("%.1f", d)
 
 @Composable
-fun StatsScreen(calc: EarningsCalc) {
+fun StatsScreen(data: AppData, calc: EarningsCalc, onSwitchRole: (String) -> Unit) {
     val today = calc.today
-    val current = YearMonth.from(today)
+    val current = calc.periodOf(today)
+    val startDay = calc.settings.cycleStartDay
     var shownIndex by rememberSaveable { mutableStateOf(current.year * 12 + current.monthValue - 1) }
     val shown = YearMonth.of(shownIndex / 12, shownIndex % 12 + 1)
     val isCurrent = shown == current
     val canGoNext = shown.isBefore(current) // 统计只到当前月
     val s = calc.monthSummary(shown)
     val records = calc.monthRecords(shown)
-    // “已过 X 天”：当月统计到今天，历史月统计到月末
-    val lastDay = if (isCurrent) today.dayOfMonth else shown.lengthOfMonth()
-    val elapsedWorkdays = calc.workdays(shown).count { it <= lastDay }
+    val elapsedWorkdays = calc.elapsedWorkdays(shown)
 
     Column(
         modifier = Modifier
@@ -58,13 +60,17 @@ fun StatsScreen(calc: EarningsCalc) {
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        RoleSwitcher(data, onSwitchRole)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(onClick = { shownIndex -= 1 }) { Text("‹", fontSize = 26.sp) }
-            Text("${shown.title()} 挣钱报告", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(170.dp), textAlign = TextAlign.Center)
+            Column(Modifier.width(170.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("${shown.title()} 挣钱报告", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                Cycle.rangeText(shown, startDay)?.let { Text(it, fontSize = 11.sp, color = mutedColor()) }
+            }
             TextButton(onClick = { shownIndex += 1 }, enabled = canGoNext) { Text("›", fontSize = 26.sp) }
         }
 
@@ -109,8 +115,8 @@ fun StatsScreen(calc: EarningsCalc) {
                     CardTitle("当月记录")
                     Text("${records.size} 条", fontSize = 11.sp, color = mutedColor())
                 }
-                records.forEachIndexed { i, (day, rec) ->
-                    RecordRow(calc, shown, day, rec, isToday = isCurrent && day == today.dayOfMonth)
+                records.forEachIndexed { i, (date, rec) ->
+                    RecordRow(calc, date, rec, isToday = date == today)
                     if (i != records.lastIndex) HorizontalDivider()
                 }
             }
@@ -132,9 +138,8 @@ private fun SummaryCard(title: String, value: String, sub: String?, modifier: Mo
 }
 
 @Composable
-private fun RecordRow(calc: EarningsCalc, ym: YearMonth, day: Int, rec: DayRecord, isToday: Boolean) {
-    val date = ym.atDay(day)
-    val impact = calc.recordImpact(ym, day)
+private fun RecordRow(calc: EarningsCalc, date: LocalDate, rec: DayRecord, isToday: Boolean) {
+    val impact = calc.recordImpact(date)
     Row(
         modifier = Modifier
             .fillMaxWidth()

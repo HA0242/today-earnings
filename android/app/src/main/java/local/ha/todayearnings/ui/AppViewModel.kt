@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import local.ha.todayearnings.core.AppData
+import local.ha.todayearnings.core.Cycle
 import local.ha.todayearnings.core.DayRecord
 import local.ha.todayearnings.core.EarningsCalc
 import local.ha.todayearnings.core.LeaveRecord
@@ -93,7 +94,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── 工作日 ──
 
-    fun toggleWorkday(ym: YearMonth, day: Int) = updateActive { role ->
+    fun setCycleStartDay(day: Int) = updateActive { it.copy(settings = it.settings.copy(cycleStartDay = Cycle.normalize(day))) }
+
+    /** 工作日按自然日期存储（与计费周期无关）。 */
+    fun toggleWorkday(date: LocalDate) = updateActive { role ->
+        val ym = YearMonth.from(date)
+        val day = date.dayOfMonth
         val current = role.ledger.plans[ym.key()] ?: ym.defaultWorkdays()
         val next = if (current.contains(day)) current - day else current + day
         role.copy(ledger = role.ledger.copy(plans = role.ledger.plans + (ym.key() to next)))
@@ -122,7 +128,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun addRole(name: String) {
         val d = _data.value
         val role = Role(name = name.trim().ifEmpty { "新角色" })
-        commit(d.copy(roles = d.roles + role))
+        commit(d.copy(roles = d.roles + role, activeRoleId = role.id)) // 新建后直接切换过去，避免误改到旧角色
     }
 
     fun renameRole(id: String, name: String) {

@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import local.ha.todayearnings.core.AppData
 import local.ha.todayearnings.core.DayTime
+import local.ha.todayearnings.core.Cycle
 import local.ha.todayearnings.core.EarningsCalc
 import local.ha.todayearnings.core.Fmt
 import local.ha.todayearnings.core.Phase
@@ -50,7 +51,7 @@ fun HomeScreen(
 ) {
     val role = data.activeRole
     val today = calc.today
-    val ym = YearMonth.from(today)
+    val ym = calc.periodOf(today)
 
     // 首次使用：问“本月已挣”从哪天算起。恰好是 1 号就不用问。
     if (role.ledger.startDate == null) {
@@ -111,7 +112,7 @@ private fun StartDateDialog(today: LocalDate, onPick: (LocalDate) -> Unit) {
 }
 
 @Composable
-private fun RoleSwitcher(data: AppData, onSwitchRole: (String) -> Unit) {
+fun RoleSwitcher(data: AppData, onSwitchRole: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth()) {
         TextButton(onClick = { open = true }, enabled = data.roles.size > 1) {
@@ -273,7 +274,7 @@ private fun MonthRow(c: EarningsCalc, ym: YearMonth) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("本月已挣", fontSize = 12.sp, letterSpacing = 1.5.sp, color = mutedColor())
+            Text(if (c.settings.cycleStartDay > 1) "本期已挣" else "本月已挣", fontSize = 12.sp, letterSpacing = 1.5.sp, color = mutedColor())
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     "¥${Fmt.money(c.monthEarnings(ym))}",
@@ -282,7 +283,7 @@ private fun MonthRow(c: EarningsCalc, ym: YearMonth) {
                     color = DS.accent,
                     style = TabularNums,
                 )
-                Text("· 本月工作日 ${c.workdayCount(ym)} 天", fontSize = 11.sp, color = mutedColor(), style = TabularNums)
+                Text("· ${Cycle.rangeText(ym, c.settings.cycleStartDay) ?: "本月"}工作日 ${c.workdayCount(ym)} 天", fontSize = 11.sp, color = mutedColor(), style = TabularNums)
             }
         }
     }

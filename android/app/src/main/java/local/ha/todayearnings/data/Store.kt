@@ -6,6 +6,7 @@ import local.ha.todayearnings.core.Ledger
 import local.ha.todayearnings.core.LeaveRecord
 import local.ha.todayearnings.core.OvertimeRecord
 import local.ha.todayearnings.core.Role
+import local.ha.todayearnings.core.Cycle
 import local.ha.todayearnings.core.Settings
 import local.ha.todayearnings.core.UpdateMode
 import local.ha.todayearnings.core.WorkSegment
@@ -53,6 +54,7 @@ object AppDataCodec {
         val settings = JSONObject()
             .put("monthlySalary", r.settings.monthlySalary)
             .put("updateMode", r.settings.updateMode.label)
+            .put("cycleStartDay", r.settings.cycleStartDay)
             .put("segments", segs)
 
         val plans = JSONObject()
@@ -93,6 +95,7 @@ object AppDataCodec {
             monthlySalary = s.optDouble("monthlySalary", 10000.0).let { if (it.isNaN() || it < 0) 0.0 else it },
             segments = segments,
             updateMode = UpdateMode.fromLabel(s.optString("updateMode")),
+            cycleStartDay = Cycle.normalize(s.optInt("cycleStartDay", 1)),
         )
 
         val l = o.optJSONObject("ledger") ?: JSONObject()

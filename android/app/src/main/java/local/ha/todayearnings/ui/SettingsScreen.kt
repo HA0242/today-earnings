@@ -44,6 +44,10 @@ import local.ha.todayearnings.core.Role
 import local.ha.todayearnings.core.UpdateMode
 import local.ha.todayearnings.core.WorkSegment
 import java.time.LocalDate
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import local.ha.todayearnings.core.Cycle
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
@@ -72,6 +76,7 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("设置", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        RoleSwitcher(data, vm::switchRole)
         RolesCard(vm, data)
         IncomeCard(vm, role, calc, onOpenCalendar)
         SegmentsCard(vm, role, calc)
@@ -162,12 +167,12 @@ private fun NameDialog(title: String, initial: String, confirmLabel: String, onD
 @Composable
 private fun IncomeCard(vm: AppViewModel, role: Role, calc: EarningsCalc, onOpenCalendar: () -> Unit) {
     val ctx = LocalContext.current
-    val ym = YearMonth.from(calc.today)
+    val ym = calc.periodOf(calc.today)
     var salaryText by remember(role.id) { mutableStateOf(salaryToText(role.settings.monthlySalary)) }
     val parsed = salaryText.toDoubleOrNull()
 
     Card {
-        CardTitle("收入参数")
+        CardTitle("收入参数 · ${role.name}")
         OutlinedTextField(
             value = salaryText,
             onValueChange = {
@@ -183,8 +188,14 @@ private fun IncomeCard(vm: AppViewModel, role: Role, calc: EarningsCalc, onOpenC
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
         )
+        CycleRow(role.settings.cycleStartDay) { vm.setCycleStartDay(it) }
+        Text(
+            cycleHint(role.settings.cycleStartDay, ym),
+            fontSize = 11.sp,
+            color = mutedColor(),
+        )
         LabeledRow("工作日历") {
-            TextButton(onClick = onOpenCalendar) { Text("本月 ${calc.workdayCount(ym)} 天 · 去日历调整") }
+            TextButton(onClick = onOpenCalendar) { Text("当期 ${calc.workdayCount(ym)} 天 · 去日历调整") }
         }
         LabeledRow("时薪") {
             Text("¥${Fmt.money(calc.hourlyIncome(ym))}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = secondaryColor())
@@ -222,7 +233,7 @@ private fun SegmentsCard(vm: AppViewModel, role: Role, calc: EarningsCalc) {
     }
 
     Card {
-        CardTitle("上班时间段")
+        CardTitle("上班时间段 · ${role.name}")
         segments.forEach { seg ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -270,7 +281,7 @@ private fun SegmentsCard(vm: AppViewModel, role: Role, calc: EarningsCalc) {
 @Composable
 private fun RefreshCard(vm: AppViewModel, role: Role) {
     Card {
-        CardTitle("刷新频率")
+        CardTitle("刷新频率 · ${role.name}")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             UpdateMode.entries.forEach { m ->
                 FilterChip(
@@ -347,5 +358,32 @@ private fun BackupCard(vm: AppViewModel, ctx: Context) {
             },
             dismissButton = { TextButton(onClick = { pendingImport = null }) { Text("取消") } },
         )
+    }
+}
+
+
+private fun cycleHint(startDay: Int, ym: YearMonth): String {
+    val range = Cycle.rangeText(ym, startDay)
+    return if (range == null) "按自然月计算：每月 1 日至月末。"
+    else "当前周期 $range，按结束日所在月命名（算作 ${ym.monthValue} 月）。月薪、日薪、统计都按这个周期计算；改起算日不会丢工作日安排。"
+}
+
+@Composable
+private fun CycleRow(startDay: Int, onChange: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    LabeledRow("计费起算日") {
+        Box {
+            TextButton(onClick = { open = true }) {
+                Text(if (startDay <= 1) "每月 1 日（自然月）" else "每月 ${startDay} 日 ▾")
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                (1..28).forEach { d ->
+                    DropdownMenuItem(
+                        text = { Text(if (d == 1) "1 日（自然月）" else "$d 日（上月 $d 日 ~ 本月 ${d - 1} 日）") },
+                        onClick = { open = false; onChange(d) },
+                    )
+                }
+            }
+        }
     }
 }
